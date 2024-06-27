@@ -21,6 +21,8 @@ def main():
     clock = p.time.Clock()
     screen.fill(p.Color("white"))
     gameState = Engine.GameState()
+    validMoves = gameState.getValidMoves()
+    moveMade = False
 
     loadImages()
 
@@ -44,13 +46,21 @@ def main():
                     playerClicks.append(cellSelected)
                 if len(playerClicks)==2:
                     move = Engine.Move(playerClicks[0], playerClicks[1], gameState.board)
-                    gameState.makeMove(move)
                     print(move.getChessNotation())
-                    cellSelected = ()
-                    playerClicks = []
+                    if move in validMoves:
+                        gameState.makeMove(move)
+                        moveMade = True
+                        cellSelected = ()
+                        playerClicks = []
+                    else:
+                        playerClicks = [cellSelected]
             elif e.type == p.KEYDOWN:
                 if e.key == p.K_z:
                     gameState.undoMove()
+                    moveMade = True
+        if moveMade:
+            validMoves = gameState.getValidMoves()
+            moveMade = False
         drawGameState(screen, gameState)
         clock.tick(MAX_FPS)
         p.display.flip()
