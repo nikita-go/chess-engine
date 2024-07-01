@@ -18,6 +18,8 @@ class GameState():
         self.previousMoves = []
         self.whiteKingLocation = (7, 4)
         self.blackKingLocation = (0, 4)
+        self.checkMate = False
+        self.staleMate = False
 
     def makeMove(self, move):
         self.board[move.startRow][move.startCol] = "."
@@ -31,6 +33,8 @@ class GameState():
 
     def undoMove(self):
         if len(self.previousMoves)!=0:
+            self.checkMate = False
+            self.staleMate = False
             move = self.previousMoves.pop()
             self.board[move.startRow][move.startCol] = move.pieceMoved
             self.board[move.endRow][move.endCol] = move.pieceCaptured
@@ -49,6 +53,11 @@ class GameState():
                 moves.remove(moves[i])
             self.whiteToMove = not self.whiteToMove
             self.undoMove()
+        if len(moves)==0:
+            if self.inCheck():
+                self.staleMate = True
+            else:
+                self.staleMate = True
         return moves
     
     def inCheck(self):
