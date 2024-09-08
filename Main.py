@@ -4,6 +4,8 @@ import pygame as p
 import Engine, MoveFinder
 
 WIDTH = HEIGHT = 512
+PANEL_HEIGHT = 512
+PANEL_WIDTH = 250
 DIMENSION = 8
 CELL_SIZE = 64
 MAX_FPS = 15
@@ -17,7 +19,7 @@ def loadImages():
 def main():
     p.init()
 
-    screen = p.display.set_mode((WIDTH, HEIGHT))
+    screen = p.display.set_mode((WIDTH + PANEL_WIDTH, HEIGHT))
     clock = p.time.Clock()
     screen.fill(p.Color("white"))
     gameState = Engine.GameState()
@@ -29,8 +31,9 @@ def main():
     cellSelected = ()
     playerClicks = []
     gameOver = False
-    playerOne = True # human plays white
-    playerTwo = False # human plays black
+    playerOne = True # white
+    playerTwo = True # black
+    moveLogFont = p.font.SysFont("Helvetica", 16, True, False)
 
     while running:
         humanTurn = (gameState.whiteToMove and playerOne) or (not gameState.whiteToMove and playerTwo)
@@ -42,7 +45,7 @@ def main():
                     location = p.mouse.get_pos()
                     col = location[0]//CELL_SIZE
                     row = location[1]//CELL_SIZE
-                    if cellSelected == (row, col):
+                    if cellSelected == (row, col)or col >= 8:
                         cellSelected = ()
                         playerClicks = []
                     else:
@@ -65,6 +68,7 @@ def main():
                     gameState.undoMove()
                     moveMade = True
                     animate = False
+                    gameOver = False
                 if e.key == p.K_r:
                     gameState = Engine.GameState()
                     validMoves = gameState.getValidMoves()
@@ -72,9 +76,14 @@ def main():
                     playerClicks = []
                     moveMade = False
                     animate = False
+                    gameOver = False
 
         if not gameOver and not humanTurn:
-            AIMove = MoveFinder.findRandomMove(validMoves)
+            AIMove = MoveFinder.findBestMove(gameState, validMoves)
+
+            if AIMove is None:
+                AIMove = MoveFinder.findRandomMove(validMoves)
+            
             gameState.makeMove(AIMove)
             moveMade = True
             animate = True
@@ -85,16 +94,15 @@ def main():
             validMoves = gameState.getValidMoves()
             moveMade = False
             animate = False
-        drawGameState(screen, gameState, validMoves, cellSelected)
-        if gameState.checkmate:
+        drawGameState(screen, gameState, validMoves, cellSelected, moveLogFont)
+        if gameState.checkmate or gameState.stalemate:
             gameOver = True
-            if gameState.whiteToMove:
-                drawText(screen, "Black wins by checkmate")
+            if gameState.stalemate:
+                gameOver = True
+                drawEndGameText(screen, "Draw by stalemate")
             else:
-                drawText(screen, "White wins by checkmate")
-        elif gameState.stalemate:
-            gameOver = True
-            drawText(screen, "Draw by stalemate")
+                drawEndGameText(screen, "Black wins by checkmate" if gameState.whiteToMove else "White wins by checkmate")
+
         clock.tick(MAX_FPS)
         p.display.flip()
 
@@ -111,10 +119,11 @@ def highlightSquares(screen, gameState, validMoves, cellSelected):
                 if move.startRow == r and move.startCol == c:
                     screen.blit(s, (move.endCol*CELL_SIZE, move.endRow*CELL_SIZE))
 
-def drawGameState(screen, gameState, validMoves, cellSelected):
+def drawGameState(screen, gameState, validMoves, cellSelected, moveLogFont):
     drawBoard(screen)
     highlightSquares(screen, gameState, validMoves, cellSelected)
     drawPieces(screen, gameState.board)
+    drawMoveLog(screen, gameState, moveLogFont)
 
 def drawBoard(screen):
     global colors
@@ -131,6 +140,30 @@ def drawPieces(screen, board):
             if piece!="--":
                 screen.blit(IMAGES[piece], p.Rect(c*CELL_SIZE, r*CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
+def drawMoveLog(screen, gameState, font):
+    moveLogRect = p.Rect(WIDTH, 0, PANEL_WIDTH, PANEL_HEIGHT)
+    p.draw.rect(screen, p.Color("black"), moveLogRect)
+    previousMoves = gameState.previousMoves
+    moveTexts = []
+    for i in range(0, len(previousMoves), 2):
+        moveString = str(i//2 + 1) + ". " + str(previousMoves[i]) + " "
+        if i + 1 < len(previousMoves):
+            moveString += str(previousMoves[i+1]) + " "
+        moveTexts.append(moveString)
+    movesPerRow = 3
+    padding = 5
+    textY = padding
+    lineSpace = 2
+    for i in range(0, len(moveTexts), movesPerRow):
+        text = ""
+        for j in range(movesPerRow):
+            if i + j < len(moveTexts):
+                text += moveTexts[i + j]
+        textObject = font.render(text, True, p.Color("white"))
+        textLocation = moveLogRect.move(padding, textY)
+        screen.blit(textObject, textLocation)
+        textY += textObject.get_height() + lineSpace
+
 def animateMove(move, screen, board, clock):
     global colors
     dR = move.endRow - move.startRow
@@ -145,17 +178,20 @@ def animateMove(move, screen, board, clock):
         endSquare = p.Rect(move.endCol*CELL_SIZE, move.endRow*CELL_SIZE, CELL_SIZE, CELL_SIZE)
         p.draw.rect(screen, color, endSquare)
         if move.pieceCaptured!="--":
+            if move.isEnpassantMove:
+                enpassantRow = move.endRow + 1 if move.pieceCaptured[0]=="b" else move.endRow - 1
+                endSquare = p.Rect(move.endCol*CELL_SIZE, enpassantRow*CELL_SIZE, CELL_SIZE, CELL_SIZE)
             screen.blit(IMAGES[move.pieceCaptured], endSquare)
         screen.blit(IMAGES[move.pieceMoved], p.Rect(c*CELL_SIZE, r*CELL_SIZE, CELL_SIZE, CELL_SIZE))
         p.display.flip()
         clock.tick(60)
 
-def drawText(screen, text):
+def drawEndGameText(screen, text):
     font = p.font.SysFont("Helvetica", 32, True, False)
     textObject = font.render(text, 0, p.Color("Gray"))
     textLocation = p.Rect(0,0,WIDTH,HEIGHT).move(WIDTH/2 - textObject.get_width()/2, HEIGHT/2 - textObject.get_height()/2)
     screen.blit(textObject, textLocation)
-    textObject = font.render(text, 0, p.color("Black"))
+    textObject = font.render(text, 0, p.Color("Black"))
     screen.blit(textObject, textLocation.move(2, 2))
 
 if __name__=="__main__":
