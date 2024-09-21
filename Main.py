@@ -2,6 +2,7 @@
 
 import pygame as p
 import Engine, MoveFinder
+from multiprocessing import Process, Queue
 
 WIDTH = HEIGHT = 512
 PANEL_HEIGHT = 512
@@ -31,9 +32,12 @@ def main():
     cellSelected = ()
     playerClicks = []
     gameOver = False
-    playerOne = True # white
-    playerTwo = True # black
+    playerOne = False # white
+    playerTwo = False # black
     moveLogFont = p.font.SysFont("Helvetica", 16, True, False)
+    isEngineThinking = False
+    moveFinderProcess = None
+    moveUndone = False
 
     while running:
         humanTurn = (gameState.whiteToMove and playerOne) or (not gameState.whiteToMove and playerTwo)
@@ -41,7 +45,7 @@ def main():
             if e.type == p.QUIT:
                 running = False
             elif e.type == p.MOUSEBUTTONDOWN:
-                if not gameOver and humanTurn:
+                if not gameOver:
                     location = p.mouse.get_pos()
                     col = location[0]//CELL_SIZE
                     row = location[1]//CELL_SIZE
@@ -51,7 +55,7 @@ def main():
                     else:
                         cellSelected = (row, col)
                         playerClicks.append(cellSelected)
-                    if len(playerClicks)==2:
+                    if len(playerClicks)==2 and humanTurn:
                         move = Engine.Move(playerClicks[0], playerClicks[1], gameState.board)
                         print(move.getChessNotation())
                         for i in range(len(validMoves)):
@@ -69,6 +73,10 @@ def main():
                     moveMade = True
                     animate = False
                     gameOver = False
+                    if isEngineThinking:
+                        moveFinderProcess.terminate()
+                        isEngineThinking = False
+                    moveUndone = True
                 if e.key == p.K_r:
                     gameState = Engine.GameState()
                     validMoves = gameState.getValidMoves()
@@ -77,16 +85,26 @@ def main():
                     moveMade = False
                     animate = False
                     gameOver = False
+                    if isEngineThinking:
+                        moveFinderProcess.terminate()
+                        isEngineThinking = False
+                    moveUndone = True
 
-        if not gameOver and not humanTurn:
-            AIMove = MoveFinder.findBestMove(gameState, validMoves)
+        if not gameOver and not humanTurn and not moveUndone:
+            if not isEngineThinking:
+                isEngineThinking = True
+                returnQueue = Queue()
+                moveFinderProcess = Process(target=MoveFinder.findBestMove, args=(gameState, validMoves, returnQueue))
+                moveFinderProcess.start()
 
-            if AIMove is None:
-                AIMove = MoveFinder.findRandomMove(validMoves)
-            
-            gameState.makeMove(AIMove)
-            moveMade = True
-            animate = True
+            if not moveFinderProcess.is_alive():
+                AIMove = returnQueue.get()
+                if AIMove is None:
+                    AIMove = MoveFinder.findRandomMove(validMoves)
+                gameState.makeMove(AIMove)
+                moveMade = True
+                animate = True
+                isEngineThinking = False
 
         if moveMade:
             if animate:
@@ -94,6 +112,7 @@ def main():
             validMoves = gameState.getValidMoves()
             moveMade = False
             animate = False
+            moveUndone = False
         drawGameState(screen, gameState, validMoves, cellSelected, moveLogFont)
         if gameState.checkmate or gameState.stalemate:
             gameOver = True
